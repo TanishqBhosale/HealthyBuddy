@@ -87,6 +87,14 @@ const Navbar = ({ onLoginClick }) => {
               <Activity className="h-4 w-4" />
               <span>Physical</span>
             </a>
+            <a 
+              href="#Health_Analisis" 
+              onClick={(e) => handleScroll(e, 'Health_Analisis')}
+              className="text-gray-600 hover:text-blue-500 transition-colors duration-200 flex items-center space-x-1"
+            >
+              <Activity className="h-4 w-4" />
+              <span>Health Analisis</span>
+            </a>
             {user ? (
               <div className="flex items-center space-x-4">
                 <div className="flex items-center space-x-2">

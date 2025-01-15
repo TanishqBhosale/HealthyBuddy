@@ -118,46 +118,54 @@ const NutritionAnalyzer = ({ onLoginRequest , drinkCount }) => {
     
     const bmi = calculateBMI(weight, height);
     
-    const prompt = `I am a ${gender} individual with height ${height}cm and weight ${weight}kg (BMI: ${bmi}). I consumed ${waterIntake} glasses of water today and ate ${foodItems}. 
+    const prompt = `As a professional nutritionist, analyze the following meal and provide detailed nutritional information:
 
-If precise nutritional information is unavailable, generate plausible values in this format:
+Person's Profile:
+- Gender: ${gender}
+- Height: ${height}cm
+- Weight: ${weight}kg
+- BMI: ${bmi}
+- Current water intake: ${waterIntake} glasses
+- Meals consumed: ${foodItems}
 
-Total Nutrition:
-- Total Calories (kcal): generate a random value between 100 and 600
-- Protein (g): generate a random value between 5 and 30
-- Carbohydrates (g): generate a random value between 20 and 120
-- Fats (g): generate a random value between 10 and 60
-- Vitamin A (µg): generate a random value between 200 and 1000
-- Vitamin C (mg): generate a random value between 10 and 90
-- Calcium (mg): generate a random value between 50 and 500
-- Iron (mg): generate a random value between 2 and 18
+Please provide a comprehensive nutritional analysis including:
 
-BMI Analysis:
+1. Detailed Nutritional Breakdown:
+- Calculate accurate total calories based on the specific food items mentioned
+- Provide precise macro and micronutrient content (proteins, carbs, fats)
+- List key vitamins and minerals present in the meals
+- Identify any nutritional deficiencies or excesses
+
+2. BMI Analysis:
 - Current BMI: ${bmi}
-- Category: determine BMI category
-- Health Implications: provide brief health implications
+- Detailed interpretation of BMI category
+- Health implications and risks
+- Target weight range recommendation
 
-Water Intake Analysis:
-- Current Intake: ${waterIntake} glasses
-- Recommended Intake: provide recommendation
-- Hydration Status: evaluate status
+3. Hydration Analysis:
+- Current intake: ${waterIntake} glasses
+- Calculate recommended daily water intake based on weight and activity level
+- Assess hydration status
+- Provide specific hydration recommendations
 
-Exercise Recommendations:
-- Provide 3 specific exercises based on BMI and overall health profile
-- Include duration and frequency for each exercise
+4. Personalized Exercise Recommendations:
+- Suggest specific exercises based on BMI and overall health profile
+- Include duration, frequency, and intensity levels
+- Consider any health limitations based on BMI
 
-Lifestyle Recommendations:
-- Provide 3 actionable lifestyle improvements
-- Include specific dietary adjustments if needed`;
+5. Tailored Lifestyle Recommendations:
+- Provide evidence-based dietary adjustments
+- Suggest meal timing and portion control strategies
+- Recommend specific nutritional improvements based on the current diet
+
+Please provide specific, actionable advice rather than general guidelines.`;
 
     try {
       const result = await model.generateContent(prompt);
       const analysisText = await result.response.text();
       
-      // Store in Firestore
       await storeAnalysisData(analysisText);
       
-      // Update UI
       setResponseText(analysisText);
       setIsAnalysisVisible(true);
     } catch (error) {

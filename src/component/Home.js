@@ -11,6 +11,8 @@ import WaterReminder from './Waterreminder';
 import HealthHistory from './healthhstory';
 import GoogleFit from './googlefit';
 import PhysicalActivityTracker from './PhysicalActivitytracker';
+import HealthAnalysisHistory from './HealthAnalisis';
+import { GoogleOAuthProvider } from '@react-oauth/google';
 
 const Home = () => {
   const [isModalOpen, setModalOpen] = useState(false);
@@ -41,7 +43,12 @@ const Home = () => {
         <NutritionAnalyzer onLoginRequest={handleLoginClick} drinkCount={drinkCount} />
       </div>
       <div id="tracker">
+      <GoogleOAuthProvider clientId="3048706275-2p1t30jcgsjtgik3vi1vntvf3u6lldrn.apps.googleusercontent.com">
         <PhysicalActivityTracker/>
+      </GoogleOAuthProvider>
+      </div>
+      <div id='Health_Analisis'>
+        <HealthAnalysisHistory/>
       </div>
       <SectionUnlock />
       <Empowering />

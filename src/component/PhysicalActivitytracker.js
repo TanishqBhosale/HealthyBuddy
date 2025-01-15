@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, Activity, Clock, Zap, Flame, Trophy } from 'lucide-react';
+import { Plus, Trash2, Activity, Clock, Zap, Flame, Trophy, CloudIcon } from 'lucide-react';
+import { GoogleLogin } from '@react-oauth/google';
 
 const PhysicalActivityTracker = () => {
   const [activities, setActivities] = useState([]);
@@ -8,8 +9,12 @@ const PhysicalActivityTracker = () => {
     duration: '',
     intensity: 'moderate'
   });
+  const [isGoogleFitConnected, setIsGoogleFitConnected] = useState(false);
+  const [googleFitActivities, setGoogleFitActivities] = useState([]);
+  const [syncStatus, setSyncStatus] = useState('idle');
+  const [accessToken, setAccessToken] = useState('');
 
-  // Activity icons, colors, and gradients mapping
+  // Activity metadata configuration
   const activityMeta = {
     walking: { 
       icon: '🚶', 
@@ -64,17 +69,122 @@ const PhysicalActivityTracker = () => {
     weightlifting: { light: 3, moderate: 4, vigorous: 6 }
   };
 
+  const googleFitActivityTypes = {
+    walking: 'com.google.walking',
+    running: 'com.google.running',
+    cycling: 'com.google.cycling',
+    swimming: 'com.google.swimming',
+    yoga: 'com.google.yoga',
+    weightlifting: 'com.google.strength_training'
+  };
+
+  // Calculate calories based on activity details
   const calculateCalories = (activity) => {
-    const weight = 70;
+    const weight = 70; // Default weight in kg
     const met = metValues[activity.type]?.[activity.intensity] || 3;
     const duration = parseFloat(activity.duration);
     return Math.round((met * weight * 3.5 * duration) / 200);
   };
 
+  const handleGoogleFitSuccess = async (response) => {
+    try {
+      setIsGoogleFitConnected(true);
+      setAccessToken(response.access_token);
+      await fetchGoogleFitData(response.access_token);
+    } catch (error) {
+      console.error('Google Fit connection failed:', error);
+    }
+  };
+
+  const fetchGoogleFitData = async (token) => {
+    setSyncStatus('loading');
+    try {
+      const endTime = new Date().getTime();
+      const startTime = endTime - (24 * 60 * 60 * 1000);
+
+      const response = await fetch(
+        `https://www.googleapis.com/fitness/v1/users/me/sessions?startTime=${new Date(startTime).toISOString()}&endTime=${new Date(endTime).toISOString()}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+
+      const data = await response.json();
+      const fetchedActivities = data.sessions.map(session => ({
+        id: session.id,
+        type: mapGoogleFitActivityType(session.activityType),
+        duration: Math.round((session.endTimeMillis - session.startTimeMillis) / 60000),
+        intensity: determineIntensity(session),
+        calories: Math.round(session.calories || 0),
+        source: 'Google Fit'
+      }));
+
+      setGoogleFitActivities(fetchedActivities);
+      setSyncStatus('success');
+    } catch (error) {
+      console.error('Error fetching Google Fit data:', error);
+      setSyncStatus('error');
+    }
+  };
+
+  const mapGoogleFitActivityType = (googleFitType) => {
+    const mapping = Object.entries(googleFitActivityTypes)
+      .find(([_, value]) => value === googleFitType);
+    return mapping ? mapping[0] : 'walking';
+  };
+
+  const determineIntensity = (session) => {
+    if (!session.calories) return 'moderate';
+    const caloriesPerMinute = session.calories / 
+      ((session.endTimeMillis - session.startTimeMillis) / 60000);
+    
+    if (caloriesPerMinute > 10) return 'vigorous';
+    if (caloriesPerMinute > 5) return 'moderate';
+    return 'light';
+  };
+
+  const syncToGoogleFit = async (activity) => {
+    if (!isGoogleFitConnected || !accessToken) return;
+
+    try {
+      const session = {
+        activityType: googleFitActivityTypes[activity.type],
+        startTimeMillis: new Date().getTime() - (activity.duration * 60000),
+        endTimeMillis: new Date().getTime(),
+        calories: activity.calories,
+        name: `${activity.type} workout`,
+      };
+
+      await fetch('https://www.googleapis.com/fitness/v1/users/me/sessions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(session)
+      });
+    } catch (error) {
+      console.error('Error syncing to Google Fit:', error);
+    }
+  };
+
   const handleAddActivity = () => {
     if (newActivity.type && newActivity.duration) {
       const calories = calculateCalories(newActivity);
-      setActivities([...activities, { ...newActivity, calories, id: Date.now() }]);
+      const newActivityData = { 
+        ...newActivity, 
+        calories, 
+        id: Date.now(),
+        source: 'manual'
+      };
+      setActivities([...activities, newActivityData]);
+      
+      if (isGoogleFitConnected) {
+        syncToGoogleFit(newActivityData);
+      }
+      
       setNewActivity({ type: '', duration: '', intensity: 'moderate' });
     }
   };
@@ -83,21 +193,38 @@ const PhysicalActivityTracker = () => {
     setActivities(activities.filter(activity => activity.id !== id));
   };
 
+  const renderGoogleFitStatus = () => (
+    <div className="mb-4 flex items-center gap-2">
+      <CloudIcon className={`w-5 h-5 ${isGoogleFitConnected ? 'text-green-500' : 'text-gray-400'}`} />
+      <span className="text-sm text-gray-600">
+        {isGoogleFitConnected ? 'Connected to Google Fit' : 'Not connected to Google Fit'}
+      </span>
+      {!isGoogleFitConnected && (
+        <GoogleLogin
+          onSuccess={handleGoogleFitSuccess}
+          onError={() => console.log('Login Failed')}
+          scope="https://www.googleapis.com/auth/fitness.activity.read https://www.googleapis.com/auth/fitness.activity.write"
+        />
+      )}
+    </div>
+  );
+
   const totalCalories = activities.reduce((sum, activity) => sum + activity.calories, 0);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 p-6">
       <div className="max-w-3xl mx-auto">
         <div className="bg-white/80 backdrop-blur-lg rounded-xl shadow-lg p-6 border border-white">
-          {/* Header */}
-          <div className="flex items-center gap-3 mb-6">
-            <div className="p-3 bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg">
-              <Activity className="w-6 h-6 text-white" />
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg">
+                <Activity className="w-6 h-6 text-white" />
+              </div>
+              <h1 className="text-2xl font-bold text-gray-800">Activity Tracker</h1>
             </div>
-            <h1 className="text-2xl font-bold text-gray-800">Activity Tracker</h1>
+            {renderGoogleFitStatus()}
           </div>
 
-          {/* Activity Selection */}
           <div className="mb-6">
             <h2 className="text-lg font-semibold text-gray-700 mb-3">Select Activity</h2>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -120,8 +247,7 @@ const PhysicalActivityTracker = () => {
             </div>
           </div>
 
-          {/* Duration and Intensity */}
-          <div className="grid grid-cols-1  gap-4 mb-6">
+          <div className="grid grid-cols-1 gap-4 mb-6">
             <div className="relative">
               <input
                 type="number"
@@ -164,7 +290,6 @@ const PhysicalActivityTracker = () => {
             </button>
           </div>
 
-          {/* Activities List */}
           <div className="space-y-4">
             <div className="flex items-center gap-2 mb-4">
               <div className="p-2 bg-gradient-to-r from-yellow-400 to-yellow-500 rounded-lg">
@@ -181,53 +306,53 @@ const PhysicalActivityTracker = () => {
             ) : (
               <div className="space-y-3">
                 {activities.map((activity) => (
-                  <div 
-                    key={activity.id} 
-                    className={`p-4 rounded-lg transition-all hover:shadow-md bg-gradient-to-r ${activityMeta[activity.type]?.gradient}`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <span className="text-2xl">{activityMeta[activity.type]?.icon}</span>
-                        <div>
-                          <h3 className="font-semibold text-gray-800">
-                            {activity.type.charAt(0).toUpperCase() + activity.type.slice(1)}
-                          </h3>
-                          <div className="flex items-center gap-2 text-sm text-gray-600">
-                            <Clock className="w-4 h-4" />
-                            {activity.duration} minutes
-                            <span className={`px-2 py-0.5 rounded-full text-white bg-gradient-to-r ${intensityGradients[activity.intensity]}`}>
-                              {activity.intensity}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-4">
-                        <div className="flex items-center gap-1">
-                          <Flame className="w-5 h-5 text-orange-500" />
-                          <span className="font-bold text-orange-500">{activity.calories}</span>
-                          <span className="text-gray-600">cal</span>
-                        </div>
-                        <button
-                          onClick={() => handleDeleteActivity(activity.id)}
-                          className="p-2 text-red-500 hover:bg-red-50 rounded-full transition-colors"
-                        >
-                          <Trash2 className="w-5 h-5" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+  <div 
+    key={activity.id} 
+    className={`p-4 rounded-lg transition-all hover:shadow-md bg-gradient-to-r ${activityMeta[activity.type]?.gradient}`}
+  >
+    <div className="flex items-center justify-between">
+      <div className="flex items-center gap-3">
+        <span className="text-2xl">{activityMeta[activity.type]?.icon}</span>
+        <div>
+          <h3 className="font-semibold text-gray-800">
+            {activity.type.charAt(0).toUpperCase() + activity.type.slice(1)}
+          </h3>
+          <div className="flex items-center gap-2 text-sm text-gray-600">
+            <Clock className="w-4 h-4" />
+            {activity.duration} minutes
+            <span className={`px-2 py-0.5 rounded-full text-white bg-gradient-to-r ${intensityGradients[activity.intensity]}`}>
+              {activity.intensity}
+            </span>
+          </div>
+        </div>
+      </div>
+      <div className="flex items-center gap-4">
+        <div className="flex items-center gap-1">
+          <Flame className="w-5 h-5 text-orange-500" />
+          <span className="font-bold text-orange-500">{activity.calories}</span>
+          <span className="text-gray-600">cal</span>
+        </div>
+        <button
+          onClick={() => handleDeleteActivity(activity.id)}
+          className="p-2 text-red-500 hover:bg-red-50 rounded-full transition-colors"
+        >
+          <Trash2 className="w-5 h-5" />
+        </button>
+      </div>
+    </div>
+  </div>
+))}
 
-                {/* Total Calories */}
-                <div className="mt-6 p-4 bg-gradient-to-r from-orange-400 via-pink-500 to-purple-500 rounded-lg text-white shadow-lg">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Flame className="w-6 h-6" />
-                      <span className="font-semibold">Total Calories Burned</span>
-                    </div>
-                    <span className="text-2xl font-bold">{totalCalories}</span>
-                  </div>
-                </div>
+{/* Total Calories Summary */}
+<div className="mt-6 p-4 bg-gradient-to-r from-orange-400 via-pink-500 to-purple-500 rounded-lg text-white shadow-lg">
+  <div className="flex items-center justify-between">
+    <div className="flex items-center gap-2">
+      <Flame className="w-6 h-6" />
+      <span className="font-semibold">Total Calories Burned</span>
+    </div>
+    <span className="text-2xl font-bold">{totalCalories}</span>
+  </div>
+</div>
               </div>
             )}
           </div>
@@ -238,3 +363,4 @@ const PhysicalActivityTracker = () => {
 };
 
 export default PhysicalActivityTracker;
+
